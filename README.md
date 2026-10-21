@@ -1,66 +1,202 @@
-# cloudflared for FreeBSD / OPNsense
+# OpenCode Smart Pipeline 🚀
 
-Up-to-date builds of [Cloudflare Tunnel (`cloudflared`)](https://github.com/cloudflare/cloudflared) for **FreeBSD amd64**, built from official Cloudflare release tags with a minimal set of FreeBSD compatibility fixes.
+Inteligentny pipeline kodowania dla OpenCode z automatycznym podziałem pracy między modele.
 
-> **Unofficial.** These builds are not provided or supported by Cloudflare. The source is unmodified upstream code except for the three small fixes described below.
+## Idea
 
-## Why this exists
+**Problem:** Claude jest drogi, ale daje najlepsze wyniki. GLM jest tani, ale może nie planować tak dobrze.
 
-Cloudflare publishes `cloudflared` binaries for Linux, macOS and Windows, but not for FreeBSD. OPNsense users get `cloudflared` through the FreeBSD ports tree, which can lag months behind upstream.
+**Rozwiązanie:** Użyj Claude tam gdzie ma to sens (planowanie), a GLM tam gdzie wystarczy (implementacja).
 
-This became a real problem in October 2026, when eight eMudhra intermediate certificates were found to be compromised. Cloudflare's advisory (2026-10-20) required upgrading `cloudflared` to **2026.10.2 or later**, while the OPNsense package was still at **2026.2.0**. This repository provides a patched build until the official package catches up.
-
-## Install on OPNsense
-
-From the OPNsense shell (console option `8` or SSH):
-
-```sh
-fetch -o /tmp/cloudflared https://github.com/mateuszszponar/cloudflared-freebsd/releases/latest/download/cloudflared-freebsd-amd64
-fetch -o /tmp/SHA256SUMS  https://github.com/mateuszszponar/cloudflared-freebsd/releases/latest/download/SHA256SUMS
-sha256 -c `awk '{print $1}' /tmp/SHA256SUMS` /tmp/cloudflared
+```
+Twój prompt → DeepSeek (rozwija) → Claude (planuje) → GLM (koduje)
+                 DARMOWY            NAJLEPSZY          TANI
 ```
 
-If the checksum matches, stop the service in the GUI (**Services → Cloudflared**), then:
+## Szybki start
 
-```sh
-cp /usr/local/bin/cloudflared /usr/local/bin/cloudflared.bak
-install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared
-cloudflared --version
+### 1. Zainstaluj OpenCode
+```bash
+npm install -g opencode-ai
 ```
 
-Start the service again in the GUI and confirm the new version in the Cloudflare Zero Trust dashboard (**Networks → Tunnels**). The `os-cloudflared` plugin keeps working unchanged; it simply runs the new binary.
+### 2. Skonfiguruj klucze API
+```bash
+# DeepSeek - expansion (darmowy tier dostępny)
+export DEEPSEEK_API_KEY="sk-..."
 
-**Rollback:** `cp /usr/local/bin/cloudflared.bak /usr/local/bin/cloudflared` and restart the service.
+# Anthropic - planning (najważniejszy)
+export ANTHROPIC_API_KEY="sk-ant-..."
 
-**Note:** a later OPNsense firmware update may reinstall the older packaged binary. Check the tunnel version after each update until the official package reaches the required version.
-
-## FreeBSD compatibility fixes
-
-Upstream `cloudflared` does not build for FreeBSD because three platform-specific pieces only exist for Linux, macOS and Windows. `build.ps1` applies these fixes automatically:
-
-| File | Change | Effect |
-|---|---|---|
-| `diagnostic/network/collector_unix.go` | Add `freebsd` to the build tag | Reuses the existing Unix network diagnostics |
-| `diagnostic/system_collector_freebsd.go` | New stub | `cloudflared tunnel diag` reports system info as unsupported; tunnel operation is unaffected |
-| `cmd/cloudflared/freebsd_token.go` | New file | Maps `createTokenFile` to the existing Unix implementation (token file created with `0600` permissions) |
-
-None of these touch tunnel connectivity, TLS or certificate handling.
-
-## Build it yourself
-
-Requirements: Windows with [Go](https://go.dev/) and [Git](https://git-scm.com/) (`winget install GoLang.Go Git.Git`).
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 2026.10.3
+# Zhipu GLM - coding (tani)
+export ZHIPU_API_KEY="..."
 ```
 
-The script clones the given upstream tag, applies the fixes, cross-compiles a static binary (`CGO_ENABLED=0`) and writes `dist/cloudflared-freebsd-amd64` plus `dist/SHA256SUMS`. It prints the upstream commit hash so you can compare it with the official release on GitHub.
+### 3. Skopiuj konfigurację
+```bash
+# Do projektu
+cp opencode.json /twój/projekt/
+cp -r .opencode /twój/projekt/
 
-## Known limitations
+# Lub globalnie
+cp opencode.json ~/.config/opencode/
+cp -r .opencode ~/.config/opencode/
+```
 
-- ICMP proxying (ping through the tunnel) is not implemented upstream for FreeBSD. HTTP, TCP and private-network routing work normally.
-- The QUIC receive-buffer warning on startup is harmless; it can be reduced by raising `kern.ipc.maxsockbuf` in **System → Settings → Tunables**.
+### 4. Używaj!
+```bash
+cd /twój/projekt
+opencode
 
-## License
+# Po prostu pisz co chcesz zrobić
+> dodaj system logowania z JWT
+```
 
-`cloudflared` is licensed under the [Apache License 2.0](https://github.com/cloudflare/cloudflared/blob/master/LICENSE) by Cloudflare, Inc. The build script and documentation in this repository are released under the same license.
+## Jak to działa?
+
+### Etap 1: Expansion (DeepSeek)
+Twój prosty prompt zostaje rozwinięty w szczegółową specyfikację:
+- Analizuje strukturę projektu
+- Identyfikuje istniejące wzorce
+- Określa pliki do zmiany
+- Definiuje wymagania i edge cases
+
+### Etap 2: Planning (Claude → GLM fallback)
+Specyfikacja trafia do planera który tworzy:
+- Decyzje architektoniczne
+- Kroki implementacji (atomowe, jasne)
+- Podpowiedzi dla codera
+- Strategię testowania
+
+**Fallback:** Gdy Claude niedostępny (brak tokenów), automatycznie przełącza na GLM.
+
+### Etap 3: Coding (GLM)
+Coder wykonuje plan krok po kroku:
+- Tworzy/modyfikuje pliki
+- Instaluje zależności
+- Raportuje postęp
+
+## Komendy
+
+| Komenda | Opis |
+|---------|------|
+| `/code <zadanie>` | Pełny pipeline z Claude |
+| `/code-budget <zadanie>` | Pełny pipeline tylko GLM |
+| `/quick <zadanie>` | Szybko, bez planowania |
+| `/expand <zadanie>` | Tylko rozwiń prompt |
+| `/plan <spec>` | Tylko zaplanuj (Claude) |
+| `/plan-glm <spec>` | Tylko zaplanuj (GLM) |
+| `/impl <plan>` | Tylko zaimplementuj |
+
+## Przykłady
+
+### Dodanie funkcji
+```
+> dodaj dark mode do aplikacji
+
+🔄 Rozszerzam prompt...
+🔄 Planuję implementację (Claude)...
+🔄 Implementuję (GLM)...
+✅ Gotowe!
+
+📁 Utworzono: ThemeContext.tsx, ThemeToggle.tsx
+📝 Zmodyfikowano: layout.tsx, tailwind.config.js
+```
+
+### Tryb budżetowy
+```
+> /code-budget napraw walidację emaila
+
+🔄 Rozszerzam prompt...
+🔄 Planuję implementację (GLM)...
+🔄 Implementuję (GLM)...
+✅ Gotowe!
+```
+
+### Szybka poprawka
+```
+> /quick zmień tytuł strony na "Moja Aplikacja"
+
+🔄 Rozszerzam prompt...
+🔄 Implementuję (GLM Flash)...
+✅ Gotowe!
+```
+
+## Oszczędności
+
+| Scenariusz | Tylko Claude | Ten pipeline | Oszczędność |
+|------------|--------------|--------------|-------------|
+| Prosty endpoint | ~$0.02 | ~$0.008 | 60% |
+| Formularz z walidacją | ~$0.05 | ~$0.015 | 70% |
+| System auth | ~$0.10 | ~$0.03 | 70% |
+
+## Struktura plików
+
+```
+.
+├── opencode.json              # Konfiguracja OpenCode
+├── AGENTS.md                  # Instrukcje dla projektu
+├── README.md                  # Ten plik
+└── .opencode/
+    └── agents/
+        ├── orchestrator-prompt.md  # Orkiestrator
+        ├── expander-prompt.md      # Expansion (DeepSeek)
+        ├── planner-prompt.md       # Planning (Claude/GLM)
+        └── coder-prompt.md         # Coding (GLM)
+```
+
+## Konfiguracja zaawansowana
+
+### Zmiana modeli
+W `opencode.json`:
+```json
+{
+  "agent": {
+    "expander": {
+      "model": "deepseek/deepseek-chat"  // lub inny tani
+    },
+    "planner-claude": {
+      "model": "anthropic/claude-sonnet-4-5-20250929"  // lub opus
+    },
+    "coder": {
+      "model": "zhipu/glm-4"  // lub glm-4-flash
+    }
+  }
+}
+```
+
+### Dostępne modele
+```bash
+opencode models  # Lista wszystkich
+```
+
+## FAQ
+
+**P: Co jeśli nie mam klucza do Claude?**
+O: Użyj `/code-budget` - wszystko pójdzie przez GLM.
+
+**P: Czy mogę użyć innych modeli niż GLM?**
+O: Tak! Zamień na Qwen, GPT-4o-mini, DeepSeek Coder, lub lokalny przez Ollama.
+
+**P: Jak wyłączyć automatyczny fallback?**
+O: Użyj `/plan` zamiast pełnego pipeline - wymusi Claude.
+
+**P: Czy to działa z istniejącym projektem?**
+O: Tak! Expander analizuje strukturę projektu i dostosowuje się.
+
+## Troubleshooting
+
+### "Provider not found"
+```bash
+opencode auth login  # Skonfiguruj klucze
+```
+
+### Claude zwraca błąd
+System automatycznie przełączy na GLM. Sprawdź limity w konsoli Anthropic.
+
+### Słaba jakość planów GLM
+Dla krytycznych zadań użyj `/plan` z Claude, a potem `/impl` z planem.
+
+---
+
+Stworzono z myślą o oszczędnym kodowaniu 💰
