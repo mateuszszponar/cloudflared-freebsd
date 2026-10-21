@@ -73,13 +73,23 @@ jobs:
           file dist/cloudflared-freebsd-amd64
           file dist/cloudflared-freebsd-amd64 | grep -q 'ELF 64-bit' 
           file dist/cloudflared-freebsd-amd64 | grep -q 'x86-64'
-          cat dist/SHA256SUMS
+
+      - name: Add install script and checksums
+        if: steps.version.outputs.skip == 'false'
+        run: |
+          sh -n install-opnsense.sh
+          cp install-opnsense.sh dist/
+          cd dist
+          sha256sum cloudflared-freebsd-amd64 install-opnsense.sh > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Attest build provenance
         if: steps.version.outputs.skip == 'false'
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: dist/cloudflared-freebsd-amd64
+          subject-path: |
+            dist/cloudflared-freebsd-amd64
+            dist/install-opnsense.sh
 
       - name: Publish release
         if: steps.version.outputs.skip == 'false'
@@ -92,7 +102,11 @@ jobs:
           cat > notes.md <<EOF
           Automated build of [cloudflare/cloudflared@$VERSION](https://github.com/cloudflare/cloudflared/releases/tag/$VERSION) (\`$commit\`) for FreeBSD amd64, with the compatibility fixes described in the [README](https://github.com/$GITHUB_REPOSITORY#freebsd-compatibility-fixes).
 
-          **Install on OPNsense:** see [Quick install](https://github.com/$GITHUB_REPOSITORY#quick-install-with-automatic-rollback).
+          **Install on OPNsense** (checksum verification and automatic rollback):
+          \`\`\`
+          fetch -o /tmp/install-opnsense.sh https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/install-opnsense.sh
+          daemon -f sh /tmp/install-opnsense.sh
+          \`\`\`
 
           **Verify provenance** (proves this file was built by this repository's workflow):
           \`\`\`
@@ -101,7 +115,7 @@ jobs:
           EOF
 
           gh release create "$VERSION" \
-            dist/cloudflared-freebsd-amd64 dist/SHA256SUMS \
+            dist/cloudflared-freebsd-amd64 dist/install-opnsense.sh dist/SHA256SUMS \
             --title "cloudflared $VERSION for FreeBSD amd64" \
             --notes-file notes.md \
             --target "$GITHUB_SHA" \

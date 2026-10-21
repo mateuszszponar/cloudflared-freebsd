@@ -15,10 +15,12 @@ This became a real problem in October 2026, when eight eMudhra intermediate cert
 ### Quick install (with automatic rollback)
 
 ```sh
-fetch -o /tmp/install-opnsense.sh https://raw.githubusercontent.com/mateuszszponar/cloudflared-freebsd/main/install-opnsense.sh
+fetch -o /tmp/install-opnsense.sh https://github.com/mateuszszponar/cloudflared-freebsd/releases/latest/download/install-opnsense.sh
 daemon -f sh /tmp/install-opnsense.sh
 tail -f /tmp/cloudflared-install.log
 ```
+
+The install script ships with every release, so it is covered by the same checksum and provenance attestation as the binary. (Release 2026.10.3 predates this; for it, use the script from the `main` branch: `https://raw.githubusercontent.com/mateuszszponar/cloudflared-freebsd/main/install-opnsense.sh`.)
 
 The script verifies the checksum, backs up the current binary, swaps it in and restarts the service. If the tunnel does not report ready within 3 minutes, it restores the previous binary automatically. Running it via `daemon` means it finishes even if your session drops, which matters when you manage the firewall through the tunnel you are upgrading.
 
