@@ -1,0 +1,108 @@
+name: Build and release
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily at 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream cloudflared tag to build (leave empty for latest)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write        # create releases
+  id-token: write        # build provenance attestation
+  attestations: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          latest=$(gh release view --repo cloudflare/cloudflared --json tagName --jq .tagName)
+          tag="${INPUT_VERSION:-$latest}"
+
+          if ! printf '%s' "$tag" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Unexpected version format: '$tag'"
+            exit 1
+          fi
+
+          echo "Upstream latest: $latest, building: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "latest=$([ "$tag" = "$latest" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag already exists, nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        if: steps.version.outputs.skip == 'false'
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Build
+        if: steps.version.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: ./build.ps1 -Version $env:VERSION
+
+      - name: Check binary
+        if: steps.version.outputs.skip == 'false'
+        run: |
+          file dist/cloudflared-freebsd-amd64
+          file dist/cloudflared-freebsd-amd64 | grep -q 'ELF 64-bit' 
+          file dist/cloudflared-freebsd-amd64 | grep -q 'x86-64'
+          cat dist/SHA256SUMS
+
+      - name: Attest build provenance
+        if: steps.version.outputs.skip == 'false'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/cloudflared-freebsd-amd64
+
+      - name: Publish release
+        if: steps.version.outputs.skip == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+          LATEST: ${{ steps.version.outputs.latest }}
+        run: |
+          commit=$(git -C "build/cloudflared-$VERSION" rev-parse --short HEAD)
+
+          cat > notes.md <<EOF
+          Automated build of [cloudflare/cloudflared@$VERSION](https://github.com/cloudflare/cloudflared/releases/tag/$VERSION) (\`$commit\`) for FreeBSD amd64, with the compatibility fixes described in the [README](https://github.com/$GITHUB_REPOSITORY#freebsd-compatibility-fixes).
+
+          **Install on OPNsense:** see [Quick install](https://github.com/$GITHUB_REPOSITORY#quick-install-with-automatic-rollback).
+
+          **Verify provenance** (proves this file was built by this repository's workflow):
+          \`\`\`
+          gh attestation verify cloudflared-freebsd-amd64 --repo $GITHUB_REPOSITORY
+          \`\`\`
+          EOF
+
+          gh release create "$VERSION" \
+            dist/cloudflared-freebsd-amd64 dist/SHA256SUMS \
+            --title "cloudflared $VERSION for FreeBSD amd64" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA" \
+            --latest="$LATEST"

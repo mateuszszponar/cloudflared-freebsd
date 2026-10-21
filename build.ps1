@@ -5,10 +5,11 @@
 .DESCRIPTION
   1. Clones the given tag of github.com/cloudflare/cloudflared.
   2. Applies three small FreeBSD compatibility fixes (see README.md).
-  3. Cross-compiles a static FreeBSD binary into .\dist\ and writes SHA256SUMS.
+  3. Cross-compiles a static FreeBSD binary into ./dist/ and writes SHA256SUMS.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 2026.10.3
+  pwsh ./build.ps1 -Version 2026.10.3   # Linux/macOS or GitHub Actions
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -19,7 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot
-$src  = Join-Path $root "build\cloudflared-$Version"
+$src  = Join-Path $root "build/cloudflared-$Version"
 $dist = Join-Path $root "dist"
 $name = "cloudflared-freebsd-$Arch"
 $out  = Join-Path $dist $name
@@ -39,10 +40,12 @@ Write-Host "Source: cloudflare/cloudflared@$Version ($commit)"
 
 # --- 2. FreeBSD compatibility fixes ------------------------------------------
 # 2a. The Unix network collector works on FreeBSD as-is; enable it.
-$net  = Join-Path $src "diagnostic\network\collector_unix.go"
+$net  = Join-Path $src "diagnostic/network/collector_unix.go"
 $text = [IO.File]::ReadAllText($net)
 if ($text -notmatch "go:build[^\n]*freebsd") {
-    Write-NoBom $net ($text -replace "//go:build darwin \|\| linux", "//go:build darwin || linux || freebsd")
+    $patched = $text -replace "//go:build darwin \|\| linux", "//go:build darwin || linux || freebsd"
+    if ($patched -eq $text) { throw "Unexpected build tag in collector_unix.go - upstream changed, review the fix" }
+    Write-NoBom $net $patched
     Write-Host "Fix: enabled diagnostic/network/collector_unix.go for freebsd"
 }
 
@@ -75,7 +78,7 @@ func (collector *SystemCollectorImpl) Collect(ctx context.Context) (*SystemInfor
 }
 
 # 2c. Token file creation: reuse the existing Unix implementation.
-$cmd = Join-Path $src "cmd\cloudflared"
+$cmd = Join-Path $src "cmd/cloudflared"
 if (-not [bool](Select-String -Path (Join-Path $cmd "*.go") -Pattern "go:build.*freebsd" -Quiet)) {
     Write-NoBom (Join-Path $cmd "freebsd_token.go") @'
 //go:build freebsd

@@ -58,9 +58,21 @@ Upstream `cloudflared` does not build for FreeBSD because three platform-specifi
 
 None of these touch tunnel connectivity, TLS or certificate handling.
 
+## Automated builds
+
+A [GitHub Actions workflow](.github/workflows/build.yml) checks daily for a new upstream `cloudflared` release. When one appears, it builds the FreeBSD binary with `build.ps1`, generates a signed [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations) and publishes a matching release here, usually within 24 hours of Cloudflare's release. A specific version can also be built manually from the **Actions** tab.
+
+To verify that a binary was built by this workflow from this repository:
+
+```sh
+gh attestation verify cloudflared-freebsd-amd64 --repo mateuszszponar/cloudflared-freebsd
+```
+
+If an upstream change breaks one of the FreeBSD fixes, the workflow fails instead of publishing a broken build.
+
 ## Build it yourself
 
-Requirements: Windows with [Go](https://go.dev/) and [Git](https://git-scm.com/) (`winget install GoLang.Go Git.Git`).
+Requirements: [PowerShell](https://github.com/PowerShell/PowerShell) (Windows PowerShell 5.1 or `pwsh` 7 on any OS), [Go](https://go.dev/) and [Git](https://git-scm.com/). On Windows: `winget install GoLang.Go Git.Git`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 2026.10.3
